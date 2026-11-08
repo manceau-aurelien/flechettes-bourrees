@@ -32,7 +32,7 @@
     <li>À chaque tour : <b>3 fléchettes</b>. Visez avec la souris, <b>cliquez</b> pour lancer.</li>
     <li>Vous êtes <b>bourré</b> : le viseur tangue, part en embardées, la vision est double. <b>La fléchette part toujours pile au centre du viseur</b> : cliquez au bon moment !</li>
     <li>Secteurs : simple, <b>double</b> (anneau extérieur), <b>triple</b> (anneau intérieur), bull 25 et bull 50.</li>
-    <li><b>Concentration</b> 🧘 : <b>maintenez Espace</b> pour réduire un peu les mouvements du viseur et de la vision (ça reste difficile !). La barre verte se vide pendant l'effort et se recharge quand vous relâchez. Bull vert (25) : +50 % de barre, bull rouge (50) : barre pleine.</li>
+    <li><b>Concentration</b> 🧘 : <b>maintenez Espace</b> pour réduire un peu les mouvements du viseur et de la vision (ça reste difficile !). La barre verte se vide pendant l'effort et <b>ne se recharge pas</b> : gardez-la pour les bons moments. Bull vert (25) : +50 % de barre, bull rouge (50) : barre pleine.</li>
   </ul>
   <div class="btns"><button onclick="startGame(1)">1 joueur (touche 1)</button><button onclick="startGame(2)">2 joueurs (touche 2)</button></div>
 </div></div>
@@ -143,7 +143,6 @@ function frame(){
   focus = started && !over && !locked && spaceHeld && bars[cur] > 0;
   for (let i = 0; i < 2; i++){
     if (i === cur && focus) bars[i] = Math.max(0, bars[i] - 30*dtS);
-    else bars[i] = Math.min(100, bars[i] + 12*dtS);
     $('bar'+i).style.width = bars[i] + '%';
   }
   calm += ((focus ? 1 : 0) - calm) * 0.1;
