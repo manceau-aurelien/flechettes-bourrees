@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Fléchettes bourrées</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{margin:0;background:#1b1b22;color:#eee;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;overflow-x:hidden}
+  h1{margin:12px 0 4px;font-size:22px}
+  #hud{display:flex;gap:16px;align-items:center;margin-bottom:8px;flex-wrap:wrap;justify-content:center}
+  .p{padding:6px 18px;border-radius:10px;background:#2a2a33;border:3px solid transparent;text-align:center;min-width:120px}
+  .p.on{border-color:#ffd24a}
+  .p b{display:block;font-size:30px;color:#ffd24a}
+  #info{font-size:16px;text-align:center}
+  canvas{background:#2a2a33;border-radius:12px;cursor:crosshair;max-width:96vw;touch-action:none}
+  #msg{height:28px;margin-top:6px;font-size:18px;color:#8fe38f}
+  button{background:#ffd24a;border:0;border-radius:8px;padding:8px 16px;font-size:16px;cursor:pointer}
+  #focus:disabled{opacity:.4;cursor:default}
+  .pw{display:block;font-size:15px;color:#9ff0b0;min-height:20px}
+  #rules{position:fixed;inset:0;background:rgba(10,10,16,.94);display:flex;align-items:center;justify-content:center;z-index:9}
+  #rules .box{max-width:560px;margin:12px;padding:22px 26px;background:#23232d;border-radius:14px;line-height:1.55}
+  #rules h2{margin:0 0 8px} #rules ul{padding-left:20px;margin:8px 0 14px} #rules .btns{display:flex;gap:12px;justify-content:center}
+  #rules button{font-size:18px;padding:12px 22px}
+  small{color:#999;margin:6px 12px 12px;text-align:center}
+</style>
+</head>
+<body>
+<div id="rules"><div class="box">
+  <h2>🍺 Fléchettes bourrées — règles</h2>
+  <ul>
+    <li>Chaque joueur part de <b>301</b> et doit tomber <b>exactement à 0</b>. Dépasser = « bust » : le tour est annulé.</li>
+    <li>À chaque tour : <b>3 fléchettes</b>. Visez avec la souris, <b>cliquez</b> pour lancer.</li>
+    <li>Vous êtes <b>bourré</b> : le viseur tangue, part en embardées, la vision est double. <b>La fléchette part toujours pile au centre du viseur</b> : cliquez au bon moment !</li>
+    <li>Secteurs : simple, <b>double</b> (anneau extérieur), <b>triple</b> (anneau intérieur), bull 25 et bull 50.</li>
+    <li><b>Concentration</b> 🧘 : toucher le bull vert (25) donne 1 pouvoir, le bull rouge (50) en donne 2. <b>Espace</b> (ou le bouton) l'active pour le tir suivant : viseur et vision stables.</li>
+  </ul>
+  <div class="btns"><button onclick="startGame(1)">1 joueur (touche 1)</button><button onclick="startGame(2)">2 joueurs (touche 2)</button></div>
+</div></div>
+<h1>🍺 Fléchettes bourrées — 301</h1>
+<div id="hud">
+  <div class="p" id="p0">Joueur 1<b id="s0">301</b><span id="pw0"></span></div>
+  <div id="info">Tour <b id="round">1</b><br>Fléchettes : <b id="darts">3</b></div>
+  <div class="p" id="p1">Joueur 2<b id="s1">301</b><span id="pw1"></span></div>
+  <button id="focus">🧘 Se concentrer (Espace)</button>
+  <button id="restart">Rejouer</button>
+  <button id="menu">Règles / mode</button>
+</div>
+<canvas id="c" width="560" height="560"></canvas>
+<div id="msg"></div>
+<small>Visez avec la souris… si vous y arrivez. Le viseur part dans tous les sens, la vision est double et la cible tangue, mais la fléchette part toujours au centre du viseur. 3 fléchettes par tour chacun, finissez exactement à 0. Dépasser = « bust », le tour est annulé.</small>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const W = cv.width, CX = W/2, CY = W/2, R = 240;
+const NUMS = [20,1,18,4,13,6,10,15,2,17,3,19,7,16,8,11,14,9,12,5];
+const $ = id => document.getElementById(id);
+const scene = document.createElement('canvas'); scene.width = scene.height = W;
+const sx = scene.getContext('2d');
+
+// Réglages "bourré" (maximum)
+const SWAY = 55, LURCH = 70, LAG = 0.06;
+
+let numPlayers = 2, started = false, lastAim = {x:CX,y:CY}, powers, focus, calm = 0, scores, cur, darts, round, turnStart, stuck, over, mouse, view, lurch, lurchT, t0 = performance.now();
+
+function reset(){
+  powers = [0,0]; focus = false; scores = [301,301]; cur = 0; darts = 3; round = 1; turnStart = 301;
+  stuck = []; over = false; mouse = {x:CX, y:CY}; view = {x:CX, y:CY};
+  lurch = {x:0,y:0,tx:0,ty:0}; lurchT = 0;
+  say(''); hud();
+}
+function hud(){
+  $('s0').textContent = scores[0]; $('s1').textContent = scores[1];
+  for (let i = 0; i < 2; i++){ const e = $('pw'+i); e.className = 'pw'; e.textContent = powers[i] ? '🧘'.repeat(powers[i]) : ''; }
+  $('focus').disabled = over || locked || focus || powers[cur] <= 0;
+  $('focus').textContent = focus ? '🧘 Concentré !' : '🧘 Se concentrer (Espace)';
+  $('darts').textContent = darts; $('round').textContent = round;
+  $('p0').classList.toggle('on', cur === 0 && !over);
+  $('p1').classList.toggle('on', cur === 1 && !over);
+  $('p1').style.visibility = numPlayers === 1 ? 'hidden' : 'visible';
+}
+function say(s, bad){ const m = $('msg'); m.textContent = s; m.style.color = bad ? '#ff7b7b' : '#8fe38f'; }
+
+function score(x, y){
+  const dx = x - CX, dy = y - CY, r = Math.hypot(dx, dy) / R;
+  if (r > 1) return {pts:0, label:'Raté'};
+  if (r <= 0.037) return {pts:50, label:'Bull (50)'};
+  if (r <= 0.094) return {pts:25, label:'Bull ext. (25)'};
+  let a = Math.atan2(dx, -dy) * 180 / Math.PI; if (a < 0) a += 360;
+  const n = NUMS[Math.floor(((a + 9) % 360) / 18)];
+  if (r >= 0.953) return {pts:n*2, label:'Double '+n+' ('+n*2+')'};
+  if (r >= 0.582 && r <= 0.629) return {pts:n*3, label:'Triple '+n+' ('+n*3+')'};
+  return {pts:n, label:String(n)};
+}
+
+// Viseur : suit la souris avec retard, tangue, et part en embardées
+function updateAim(){
+  const t = (performance.now() - t0) / 1000;
+  if (t > lurchT){
+    lurchT = t + 0.4 + Math.random()*0.7;
+    lurch.tx = (Math.random()-.5) * 2 * LURCH;
+    lurch.ty = (Math.random()-.5) * 2 * LURCH;
+  }
+  const m = 1 - 0.96*calm;
+  lurch.x += (lurch.tx - lurch.x) * 0.06;
+  lurch.y += (lurch.ty - lurch.y) * 0.06;
+  const lag = LAG + (0.4 - LAG)*calm;
+  view.x += (mouse.x - view.x) * lag;
+  view.y += (mouse.y - view.y) * lag;
+  return {
+    x: view.x + m*(lurch.x + Math.sin(t*1.7)*SWAY*.6 + Math.sin(t*4.9)*SWAY*.25 + Math.sin(t*9.3)*6),
+    y: view.y + m*(lurch.y + Math.cos(t*1.3)*SWAY*.6 + Math.cos(t*5.7)*SWAY*.25 + Math.cos(t*8.1)*6)
+  };
+}
+
+function drawBoard(c){
+  c.clearRect(0,0,W,W);
+  c.fillStyle = '#111'; c.beginPath(); c.arc(CX,CY,R+34,0,7); c.fill();
+  const ring = (r0, r1, a0, a1, col) => {
+    c.beginPath(); c.arc(CX,CY,r1*R,a0,a1); c.arc(CX,CY,r0*R,a1,a0,true); c.closePath();
+    c.fillStyle = col; c.fill();
+  };
+  for (let i = 0; i < 20; i++){
+    const a0 = (i*18 - 9 - 90) * Math.PI/180, a1 = a0 + 18*Math.PI/180;
+    const dark = i % 2 === 0;
+    const base = dark ? '#161616' : '#f1e3b8', col = dark ? '#c4262e' : '#1f8a4c';
+    ring(0.094, 0.582, a0, a1, base);
+    ring(0.582, 0.629, a0, a1, col);
+    ring(0.629, 0.953, a0, a1, base);
+    ring(0.953, 1, a0, a1, col);
+    const am = (a0 + a1) / 2;
+    c.fillStyle = '#fff'; c.font = 'bold 20px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(NUMS[i], CX + Math.cos(am)*(R+18), CY + Math.sin(am)*(R+18));
+  }
+  c.beginPath(); c.arc(CX,CY,0.094*R,0,7); c.fillStyle = '#1f8a4c'; c.fill();
+  c.beginPath(); c.arc(CX,CY,0.037*R,0,7); c.fillStyle = '#c4262e'; c.fill();
+}
+
+function drawDart(c, x, y){
+  c.strokeStyle = '#ddd'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(x,y); c.lineTo(x+22,y+34); c.stroke();
+  c.fillStyle = cur === 0 ? '#4aa3ff' : '#ff6b9a'; c.beginPath(); c.moveTo(x+22,y+34); c.lineTo(x+34,y+36); c.lineTo(x+26,y+50); c.fill();
+  c.fillStyle = '#ffd24a'; c.beginPath(); c.arc(x,y,3,0,7); c.fill();
+}
+
+function frame(){
+  const t = (performance.now() - t0) / 1000;
+  calm += ((focus ? 1 : 0) - calm) * 0.1;
+  const vm = 1 - 0.95*calm;
+  const p = over ? null : updateAim();
+  if (p) lastAim = p;
+  // Scène nette
+  drawBoard(sx);
+  stuck.forEach(d => drawDart(sx, d.x, d.y));
+  if (p){
+    sx.strokeStyle = 'rgba(255,255,255,.9)'; sx.lineWidth = 2;
+    sx.beginPath(); sx.arc(p.x,p.y,14,0,7); sx.moveTo(p.x-22,p.y); sx.lineTo(p.x+22,p.y); sx.moveTo(p.x,p.y-22); sx.lineTo(p.x,p.y+22); sx.stroke();
+  }
+  // Vision double + tangage
+  ctx.clearRect(0,0,W,W);
+  ctx.save();
+  ctx.translate(CX,CY);
+  ctx.rotate(Math.sin(t*0.9)*0.05*vm);
+  const z = 1 + Math.sin(t*1.4)*0.04*vm;
+  ctx.scale(z,z);
+  ctx.translate(-CX,-CY);
+  const gx = Math.sin(t*1.1)*16*vm, gy = Math.cos(t*0.8)*12*vm;
+  ctx.globalAlpha = 0.45; ctx.drawImage(scene, -gx, -gy);
+  ctx.globalAlpha = 0.6;  ctx.drawImage(scene, gx, gy);
+  ctx.restore();
+  cv.style.filter = 'blur(' + ((1.2 + Math.abs(Math.sin(t*0.7))*1.6)*vm).toFixed(2) + 'px) hue-rotate(' + Math.round(Math.sin(t*0.5)*25*vm) + 'deg)';
+  if (focus) { ctx.strokeStyle = 'rgba(120,255,160,.8)'; ctx.lineWidth = 6; ctx.strokeRect(3,3,W-6,W-6); }
+  requestAnimationFrame(frame);
+}
+
+function nextPlayer(){
+  cur = numPlayers === 1 ? 0 : 1 - cur; darts = 3; turnStart = scores[cur]; focus = false;
+  if (cur === 0) round++;
+  stuck = [];
+  say('À Joueur ' + (cur+1) + ' !');
+  hud();
+}
+
+let locked = false;
+function throwDart(){
+  if (!started || over || locked || darts <= 0) return;
+  const wasFocus = focus; focus = false;
+  const hit = {x: lastAim.x, y: lastAim.y};   // pile là où le viseur est affiché
+  stuck.push(hit);
+  const s = score(hit.x, hit.y);
+  darts--; scores[cur] -= s.pts;
+  let bonus = '';
+  if (s.pts === 25){ powers[cur] += 1; bonus = '  +1 🧘 concentration'; }
+  if (s.pts === 50){ powers[cur] += 2; bonus = '  +2 🧘 concentration !'; }
+  say('Joueur ' + (cur+1) + ' : ' + s.label + (wasFocus ? ' (concentré)' : '') + bonus);
+  if (scores[cur] === 0){ over = true; say('🏆 Joueur ' + (cur+1) + ' gagne en ' + round + ' tour' + (round>1?'s':'') + ' !'); hud(); return; }
+  if (scores[cur] < 0){
+    scores[cur] = turnStart; say('BUST ! Joueur ' + (cur+1) + ' revient à ' + turnStart, true);
+    hud(); locked = true; setTimeout(() => { locked = false; nextPlayer(); }, 1200); return;
+  }
+  hud();
+  if (darts === 0){ locked = true; setTimeout(() => { locked = false; nextPlayer(); }, 1200); }
+}
+
+function pos(e){
+  const r = cv.getBoundingClientRect(), k = W / r.width;
+  const pt = e.touches ? e.touches[0] : e;
+  return {x:(pt.clientX - r.left)*k, y:(pt.clientY - r.top)*k};
+}
+cv.addEventListener('mousemove', e => mouse = pos(e));
+cv.addEventListener('touchmove', e => { e.preventDefault(); mouse = pos(e); }, {passive:false});
+cv.addEventListener('click', e => { mouse = pos(e); throwDart(); });
+function useFocus(){
+  if (!started || over || locked || focus || powers[cur] <= 0) return;
+  powers[cur]--; focus = true; say('Joueur ' + (cur+1) + ' se concentre : le prochain tir est stable'); hud();
+}
+$('focus').onclick = useFocus;
+addEventListener('keydown', e => { if (e.code === 'Space'){ e.preventDefault(); useFocus(); } });
+$('restart').onclick = () => { locked = false; reset(); };
+$('menu').onclick = () => { $('rules').style.display = 'flex'; started = false; };
+function startGame(n){ numPlayers = n; started = true; locked = false; $('rules').style.display = 'none'; reset(); }
+addEventListener('keydown', e => {
+  if (started) return;
+  if (e.code === 'Digit1' || e.code === 'Numpad1') startGame(1);
+  if (e.code === 'Digit2' || e.code === 'Numpad2') startGame(2);
+});
+
+reset(); frame();
+</script>
+</body>
+</html>
