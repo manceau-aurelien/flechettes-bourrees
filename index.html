@@ -12,7 +12,22 @@
   .p.on{border-color:#ffd24a}
   .p b{display:block;font-size:30px;color:#ffd24a}
   #info{font-size:16px;text-align:center}
-  canvas{background:#2a2a33;border-radius:12px;cursor:crosshair;max-width:96vw;touch-action:none}
+  :root{--s:min(96vw,560px)}
+  #stage{position:relative;width:var(--s);height:var(--s)}
+  #stage canvas{position:absolute;inset:0;width:100%;height:100%;border-radius:12px;touch-action:none}
+  #c{background:#2a2a33;cursor:crosshair}
+  #aimc{pointer-events:none}
+  #rules .box{max-height:94dvh;overflow:auto}
+  #rules .btns{position:sticky;bottom:0;background:#23232d;padding-top:8px}
+  @media (hover:none){:root{--s:min(94vw,calc(100dvh - 345px))} h1{display:none} body{justify-content:flex-start;padding-top:6px}}
+  @media (max-width:600px){
+    #hud{gap:6px;margin-bottom:4px;flex-wrap:wrap;max-width:96vw}
+    .p{min-width:0;padding:3px 8px;border-width:2px;font-size:12px} .p b{font-size:20px}
+    #info{font-size:12px} button{padding:6px 9px;font-size:12px}
+    #rules .box{font-size:13px;padding:14px 16px} #rules h2{font-size:17px}
+    #rules button{font-size:15px;padding:10px 14px} #msg{font-size:15px;height:22px}
+    #controls{margin-top:6px}
+  }
   #msg{height:28px;margin-top:6px;font-size:18px;color:#8fe38f}
   button{background:#ffd24a;border:0;border-radius:8px;padding:8px 16px;font-size:16px;cursor:pointer}
   .bar{height:8px;margin-top:4px;background:#111;border-radius:4px;overflow:hidden}
@@ -52,7 +67,7 @@
   <button id="restart">Rejouer</button>
   <button id="menu">Règles / mode</button>
 </div>
-<canvas id="c" width="560" height="560"></canvas>
+<div id="stage"><canvas id="c" width="560" height="560"></canvas><canvas id="aimc" width="560" height="560"></canvas></div>
 <div id="msg"></div>
 <div id="controls">
   <div id="focusBtn">🧘</div>
@@ -65,6 +80,7 @@ const W = cv.width, CX = W/2, CY = W/2, R = 240;
 const NUMS = [20,1,18,4,13,6,10,15,2,17,3,19,7,16,8,11,14,9,12,5];
 const $ = id => document.getElementById(id);
 const touchMode = matchMedia('(hover: none)').matches;
+const actx = document.getElementById('aimc').getContext('2d');
 const scene = document.createElement('canvas'); scene.width = scene.height = W;
 const sx = scene.getContext('2d');
 
@@ -84,7 +100,7 @@ function hud(){
   $('darts').textContent = darts; $('round').textContent = round;
   $('p0').classList.toggle('on', cur === 0 && !over);
   $('p1').classList.toggle('on', cur === 1 && !over);
-  $('p1').style.visibility = numPlayers === 1 ? 'hidden' : 'visible';
+  $('p1').style.display = numPlayers === 1 ? 'none' : '';
 }
 function say(s, bad){ const m = $('msg'); m.textContent = s; m.style.color = bad ? '#ff7b7b' : '#8fe38f'; }
 
@@ -181,18 +197,20 @@ function frame(){
   ctx.rotate(th);
   ctx.scale(z,z);
   ctx.translate(-CX,-CY);
-  const gx = Math.sin(t*1.1)*16*vm, gy = Math.cos(t*0.8)*12*vm;
+  const gx = Math.sin(t*1.1)*11*vm, gy = Math.cos(t*0.8)*8*vm;
   ctx.globalAlpha = 0.5; ctx.drawImage(scene, -gx, -gy);   // deux images symétriques : le vrai point est au milieu
   ctx.drawImage(scene, gx, gy);
   ctx.restore();
+  actx.clearRect(0,0,W,W);
   // Viseur net, dessiné à l'écran : ce que vous voyez sous la croix est ce que vous touchez
   if (p){
     lastAim = sceneToBoard(p, th, z);
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(p.x,p.y,14,0,7); ctx.moveTo(p.x-22,p.y); ctx.lineTo(p.x+22,p.y); ctx.moveTo(p.x,p.y-22); ctx.lineTo(p.x,p.y+22); ctx.stroke();
+    const cross = () => { actx.beginPath(); actx.arc(p.x,p.y,16,0,7); actx.moveTo(p.x-28,p.y); actx.lineTo(p.x+28,p.y); actx.moveTo(p.x,p.y-28); actx.lineTo(p.x,p.y+28); actx.stroke(); };
+    actx.strokeStyle = '#000'; actx.lineWidth = 6; cross();
+    actx.strokeStyle = '#ffe14a'; actx.lineWidth = 3; cross();
   }
-  cv.style.filter = 'blur(' + ((1.2 + Math.abs(Math.sin(t*0.7))*1.6)*vm).toFixed(2) + 'px) hue-rotate(' + Math.round(Math.sin(t*0.5)*25*vm) + 'deg)';
-  if (focus) { ctx.strokeStyle = 'rgba(120,255,160,.8)'; ctx.lineWidth = 6; ctx.strokeRect(3,3,W-6,W-6); }
+  cv.style.filter = 'blur(' + ((0.4 + Math.abs(Math.sin(t*0.7))*0.9)*vm*(cv.clientWidth/W)).toFixed(2) + 'px) hue-rotate(' + Math.round(Math.sin(t*0.5)*25*vm) + 'deg)';
+  if (focus) { actx.strokeStyle = 'rgba(120,255,160,.8)'; actx.lineWidth = 6; actx.strokeRect(3,3,W-6,W-6); }
   requestAnimationFrame(frame);
 }
 
