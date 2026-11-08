@@ -15,8 +15,8 @@
   canvas{background:#2a2a33;border-radius:12px;cursor:crosshair;max-width:96vw;touch-action:none}
   #msg{height:28px;margin-top:6px;font-size:18px;color:#8fe38f}
   button{background:#ffd24a;border:0;border-radius:8px;padding:8px 16px;font-size:16px;cursor:pointer}
-  #focus:disabled{opacity:.4;cursor:default}
-  .pw{display:block;font-size:15px;color:#9ff0b0;min-height:20px}
+  .bar{height:8px;margin-top:4px;background:#111;border-radius:4px;overflow:hidden}
+  .bar i{display:block;height:100%;width:100%;background:#5fe08a}
   #rules{position:fixed;inset:0;background:rgba(10,10,16,.94);display:flex;align-items:center;justify-content:center;z-index:9}
   #rules .box{max-width:560px;margin:12px;padding:22px 26px;background:#23232d;border-radius:14px;line-height:1.55}
   #rules h2{margin:0 0 8px} #rules ul{padding-left:20px;margin:8px 0 14px} #rules .btns{display:flex;gap:12px;justify-content:center}
@@ -32,16 +32,15 @@
     <li>À chaque tour : <b>3 fléchettes</b>. Visez avec la souris, <b>cliquez</b> pour lancer.</li>
     <li>Vous êtes <b>bourré</b> : le viseur tangue, part en embardées, la vision est double. <b>La fléchette part toujours pile au centre du viseur</b> : cliquez au bon moment !</li>
     <li>Secteurs : simple, <b>double</b> (anneau extérieur), <b>triple</b> (anneau intérieur), bull 25 et bull 50.</li>
-    <li><b>Concentration</b> 🧘 : toucher le bull vert (25) donne 1 pouvoir, le bull rouge (50) en donne 2. <b>Espace</b> (ou le bouton) l'active pour le tir suivant : viseur et vision stables.</li>
+    <li><b>Concentration</b> 🧘 : <b>maintenez Espace</b> pour réduire un peu les mouvements du viseur et de la vision (ça reste difficile !). La barre verte se vide pendant l'effort et se recharge quand vous relâchez. Bull vert (25) : +50 % de barre, bull rouge (50) : barre pleine.</li>
   </ul>
   <div class="btns"><button onclick="startGame(1)">1 joueur (touche 1)</button><button onclick="startGame(2)">2 joueurs (touche 2)</button></div>
 </div></div>
 <h1>🍺 Fléchettes bourrées — 301</h1>
 <div id="hud">
-  <div class="p" id="p0">Joueur 1<b id="s0">301</b><span id="pw0"></span></div>
+  <div class="p" id="p0">Joueur 1<b id="s0">301</b><div class="bar" title="Concentration"><i id="bar0"></i></div></div>
   <div id="info">Tour <b id="round">1</b><br>Fléchettes : <b id="darts">3</b></div>
-  <div class="p" id="p1">Joueur 2<b id="s1">301</b><span id="pw1"></span></div>
-  <button id="focus">🧘 Se concentrer (Espace)</button>
+  <div class="p" id="p1">Joueur 2<b id="s1">301</b><div class="bar" title="Concentration"><i id="bar1"></i></div></div>
   <button id="restart">Rejouer</button>
   <button id="menu">Règles / mode</button>
 </div>
@@ -59,19 +58,16 @@ const sx = scene.getContext('2d');
 // Réglages "bourré" (maximum)
 const SWAY = 55, LURCH = 70, LAG = 0.06;
 
-let numPlayers = 2, started = false, lastAim = {x:CX,y:CY}, powers, focus, calm = 0, scores, cur, darts, round, turnStart, stuck, over, mouse, view, lurch, lurchT, t0 = performance.now();
+let numPlayers = 2, started = false, lastAim = {x:CX,y:CY}, bars = [100,100], spaceHeld = false, focus, calm = 0, lastT = performance.now(), scores, cur, darts, round, turnStart, stuck, over, mouse, view, lurch, lurchT, t0 = performance.now();
 
 function reset(){
-  powers = [0,0]; focus = false; scores = [301,301]; cur = 0; darts = 3; round = 1; turnStart = 301;
+  bars = [100,100]; focus = false; scores = [301,301]; cur = 0; darts = 3; round = 1; turnStart = 301;
   stuck = []; over = false; mouse = {x:CX, y:CY}; view = {x:CX, y:CY};
   lurch = {x:0,y:0,tx:0,ty:0}; lurchT = 0;
   say(''); hud();
 }
 function hud(){
   $('s0').textContent = scores[0]; $('s1').textContent = scores[1];
-  for (let i = 0; i < 2; i++){ const e = $('pw'+i); e.className = 'pw'; e.textContent = powers[i] ? '🧘'.repeat(powers[i]) : ''; }
-  $('focus').disabled = over || locked || focus || powers[cur] <= 0;
-  $('focus').textContent = focus ? '🧘 Concentré !' : '🧘 Se concentrer (Espace)';
   $('darts').textContent = darts; $('round').textContent = round;
   $('p0').classList.toggle('on', cur === 0 && !over);
   $('p1').classList.toggle('on', cur === 1 && !over);
@@ -99,10 +95,10 @@ function updateAim(){
     lurch.tx = (Math.random()-.5) * 2 * LURCH;
     lurch.ty = (Math.random()-.5) * 2 * LURCH;
   }
-  const m = 1 - 0.96*calm;
+  const m = 1 - 0.5*calm;
   lurch.x += (lurch.tx - lurch.x) * 0.06;
   lurch.y += (lurch.ty - lurch.y) * 0.06;
-  const lag = LAG + (0.4 - LAG)*calm;
+  const lag = LAG + (0.15 - LAG)*calm;
   view.x += (mouse.x - view.x) * lag;
   view.y += (mouse.y - view.y) * lag;
   return {
@@ -143,8 +139,15 @@ function drawDart(c, x, y){
 
 function frame(){
   const t = (performance.now() - t0) / 1000;
+  const dtS = Math.min(0.05, (performance.now() - lastT)/1000); lastT = performance.now();
+  focus = started && !over && !locked && spaceHeld && bars[cur] > 0;
+  for (let i = 0; i < 2; i++){
+    if (i === cur && focus) bars[i] = Math.max(0, bars[i] - 30*dtS);
+    else bars[i] = Math.min(100, bars[i] + 12*dtS);
+    $('bar'+i).style.width = bars[i] + '%';
+  }
   calm += ((focus ? 1 : 0) - calm) * 0.1;
-  const vm = 1 - 0.95*calm;
+  const vm = 1 - 0.45*calm;
   const p = over ? null : updateAim();
   if (p) lastAim = p;
   // Scène nette
@@ -172,7 +175,7 @@ function frame(){
 }
 
 function nextPlayer(){
-  cur = numPlayers === 1 ? 0 : 1 - cur; darts = 3; turnStart = scores[cur]; focus = false;
+  cur = numPlayers === 1 ? 0 : 1 - cur; darts = 3; turnStart = scores[cur];
   if (cur === 0) round++;
   stuck = [];
   say('À Joueur ' + (cur+1) + ' !');
@@ -182,14 +185,14 @@ function nextPlayer(){
 let locked = false;
 function throwDart(){
   if (!started || over || locked || darts <= 0) return;
-  const wasFocus = focus; focus = false;
+  const wasFocus = focus;
   const hit = {x: lastAim.x, y: lastAim.y};   // pile là où le viseur est affiché
   stuck.push(hit);
   const s = score(hit.x, hit.y);
   darts--; scores[cur] -= s.pts;
   let bonus = '';
-  if (s.pts === 25){ powers[cur] += 1; bonus = '  +1 🧘 concentration'; }
-  if (s.pts === 50){ powers[cur] += 2; bonus = '  +2 🧘 concentration !'; }
+  if (s.pts === 25){ bars[cur] = Math.min(100, bars[cur] + 50); bonus = '  +50% concentration'; }
+  if (s.pts === 50){ bars[cur] = 100; bonus = '  concentration pleine !'; }
   say('Joueur ' + (cur+1) + ' : ' + s.label + (wasFocus ? ' (concentré)' : '') + bonus);
   if (scores[cur] === 0){ over = true; say('🏆 Joueur ' + (cur+1) + ' gagne en ' + round + ' tour' + (round>1?'s':'') + ' !'); hud(); return; }
   if (scores[cur] < 0){
@@ -208,12 +211,9 @@ function pos(e){
 cv.addEventListener('mousemove', e => mouse = pos(e));
 cv.addEventListener('touchmove', e => { e.preventDefault(); mouse = pos(e); }, {passive:false});
 cv.addEventListener('click', e => { mouse = pos(e); throwDart(); });
-function useFocus(){
-  if (!started || over || locked || focus || powers[cur] <= 0) return;
-  powers[cur]--; focus = true; say('Joueur ' + (cur+1) + ' se concentre : le prochain tir est stable'); hud();
-}
-$('focus').onclick = useFocus;
-addEventListener('keydown', e => { if (e.code === 'Space'){ e.preventDefault(); useFocus(); } });
+addEventListener('keydown', e => { if (e.code === 'Space'){ e.preventDefault(); spaceHeld = true; } });
+addEventListener('keyup', e => { if (e.code === 'Space') spaceHeld = false; });
+addEventListener('blur', () => spaceHeld = false);
 $('restart').onclick = () => { locked = false; reset(); };
 $('menu').onclick = () => { $('rules').style.display = 'flex'; started = false; };
 function startGame(n){ numPlayers = n; started = true; locked = false; $('rules').style.display = 'none'; reset(); }
