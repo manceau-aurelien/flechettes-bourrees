@@ -6,4 +6,6 @@ Jeu de fléchettes (301) en un seul fichier HTML, à 1 ou 2 joueurs. Visez malgr
 - Maintenez Espace pour vous concentrer : le viseur bouge un peu moins (barre qui se vide et ne se recharge pas). Bull vert (25) = +50 % de barre, bull rouge (50) = barre pleine.
 - Finissez exactement à 0, sinon c'est un « bust ».
 
+Sur téléphone : glissez sur le rond jaune pour viser, relâchez pour tirer ; le bouton 🧘 sert à se concentrer.
+
 Ouvrez `index.html` dans un navigateur pour jouer.
