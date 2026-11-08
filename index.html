@@ -150,6 +150,15 @@ function drawDart(c, x, y){
   c.fillStyle = '#ffd24a'; c.beginPath(); c.arc(x,y,3,0,7); c.fill();
 }
 
+// Convertit un point de l'écran en point de la cible (inverse de rotation + zoom autour du centre)
+function sceneToBoard(p, th, z){
+  const dx = p.x - CX, dy = p.y - CY, c = Math.cos(th), s = Math.sin(th);
+  return { x: CX + (dx*c + dy*s)/z, y: CY + (-dx*s + dy*c)/z };
+}
+function boardToScreen(q, th, z){
+  const dx = q.x - CX, dy = q.y - CY, c = Math.cos(th), s = Math.sin(th);
+  return { x: CX + z*(dx*c - dy*s), y: CY + z*(dx*s + dy*c) };
+}
 function frame(){
   const t = (performance.now() - t0) / 1000;
   const dtS = Math.min(0.05, (performance.now() - lastT)/1000); lastT = performance.now();
@@ -161,26 +170,27 @@ function frame(){
   calm += ((focus ? 1 : 0) - calm) * 0.1;
   const vm = 1 - 0.45*calm;
   const p = over ? null : updateAim();
-  if (p) lastAim = p;
   // Scène nette
   drawBoard(sx);
   stuck.forEach(d => drawDart(sx, d.x, d.y));
-  if (p){
-    sx.strokeStyle = 'rgba(255,255,255,.9)'; sx.lineWidth = 2;
-    sx.beginPath(); sx.arc(p.x,p.y,14,0,7); sx.moveTo(p.x-22,p.y); sx.lineTo(p.x+22,p.y); sx.moveTo(p.x,p.y-22); sx.lineTo(p.x,p.y+22); sx.stroke();
-  }
   // Vision double + tangage
   ctx.clearRect(0,0,W,W);
   ctx.save();
   ctx.translate(CX,CY);
-  ctx.rotate(Math.sin(t*0.9)*0.05*vm);
-  const z = 1 + Math.sin(t*1.4)*0.04*vm;
+  const th = Math.sin(t*0.9)*0.05*vm, z = 1 + Math.sin(t*1.4)*0.02*vm;
+  ctx.rotate(th);
   ctx.scale(z,z);
   ctx.translate(-CX,-CY);
   const gx = Math.sin(t*1.1)*16*vm, gy = Math.cos(t*0.8)*12*vm;
-  ctx.globalAlpha = 0.45; ctx.drawImage(scene, -gx, -gy);
-  ctx.globalAlpha = 0.6;  ctx.drawImage(scene, gx, gy);
+  ctx.globalAlpha = 0.5; ctx.drawImage(scene, -gx, -gy);   // deux images symétriques : le vrai point est au milieu
+  ctx.drawImage(scene, gx, gy);
   ctx.restore();
+  // Viseur net, dessiné à l'écran : ce que vous voyez sous la croix est ce que vous touchez
+  if (p){
+    lastAim = sceneToBoard(p, th, z);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p.x,p.y,14,0,7); ctx.moveTo(p.x-22,p.y); ctx.lineTo(p.x+22,p.y); ctx.moveTo(p.x,p.y-22); ctx.lineTo(p.x,p.y+22); ctx.stroke();
+  }
   cv.style.filter = 'blur(' + ((1.2 + Math.abs(Math.sin(t*0.7))*1.6)*vm).toFixed(2) + 'px) hue-rotate(' + Math.round(Math.sin(t*0.5)*25*vm) + 'deg)';
   if (focus) { ctx.strokeStyle = 'rgba(120,255,160,.8)'; ctx.lineWidth = 6; ctx.strokeRect(3,3,W-6,W-6); }
   requestAnimationFrame(frame);
