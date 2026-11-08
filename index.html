@@ -36,6 +36,11 @@
   #rules .box{max-width:560px;margin:12px;padding:22px 26px;background:#23232d;border-radius:14px;line-height:1.55}
   #rules h2{margin:0 0 8px} #rules ul{padding-left:20px;margin:8px 0 14px} #rules .btns{display:flex;gap:12px;justify-content:center}
   #rules button{font-size:18px;padding:12px 22px}
+  #online{margin-top:14px;padding-top:12px;border-top:1px solid #444}
+  #online .row{display:flex;gap:8px;margin-top:8px}
+  #online input{flex:1;min-width:0;font-size:20px;letter-spacing:6px;text-align:center;padding:8px;border-radius:8px;border:2px solid #ffd24a;background:#14141b;color:#fff}
+  #online button{font-size:16px;padding:8px 14px}
+  #net{min-height:20px;margin-top:6px;color:#9ff0b0;font-size:14px}
   #controls{display:none;width:min(96vw,560px);justify-content:space-between;align-items:center;margin-top:10px;user-select:none;-webkit-user-select:none}
   #controls div{touch-action:none;border-radius:50%;display:flex;align-items:center;justify-content:center;text-align:center;font-size:15px;color:#fff}
   #focusBtn{width:110px;height:110px;background:#1f8a4c;border:4px solid #5fe08a;font-size:34px!important}
@@ -57,7 +62,12 @@
     <li><b>Sur téléphone</b> : faites glisser le doigt sur le rond jaune (en bas à droite) pour déplacer le viseur, <b>relâchez pour tirer</b>. Le bouton 🧘 (en bas à gauche) sert à vous concentrer.</li>
     <li><b>Concentration</b> 🧘 : <b>maintenez Espace</b> (ou le bouton 🧘) pour réduire un peu les mouvements du viseur et de la vision (ça reste difficile !). La barre verte se vide pendant l'effort et <b>ne se recharge pas</b> : gardez-la pour les bons moments. C'est à vous de la gérer pendant toute la partie.</li>
   </ul>
-  <div class="btns"><button onclick="startGame(1)">1 joueur (touche 1)</button><button onclick="startGame(2)">2 joueurs (touche 2)</button></div>
+  <div class="btns"><button onclick="startGame(1)">1 joueur (touche 1)</button><button onclick="startGame(2)">2 joueurs, même écran (touche 2)</button></div>
+  <div id="online">
+    <b>🌐 À deux sur internet</b> : chacun entre le <b>même code à 4 chiffres</b>, le premier crée la salle, le second la rejoint.
+    <div class="row"><input id="code" inputmode="numeric" maxlength="4" placeholder="Code (4 chiffres)" autocomplete="off"><button onclick="goOnline()">Jouer en ligne</button></div>
+    <div id="net"></div>
+  </div>
 </div></div>
 <h1>🍺 Fléchettes bourrées — 301</h1>
 <div id="hud">
@@ -74,6 +84,7 @@
   <div id="pad">Glisser pour viser<br>Relâcher = tir</div>
 </div>
 <small id="hint">Visez avec la souris… si vous y arrivez. Le viseur part dans tous les sens, la vision est double et la cible tangue, mais la fléchette part toujours au centre du viseur. 3 fléchettes par tour chacun, finissez exactement à 0. Dépasser = « bust », le tour est annulé.</small>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const W = cv.width, CX = W/2, CY = W/2, R = 240;
@@ -178,14 +189,14 @@ function boardToScreen(q, th, z){
 function frame(){
   const t = (performance.now() - t0) / 1000;
   const dtS = Math.min(0.05, (performance.now() - lastT)/1000); lastT = performance.now();
-  focus = started && !over && !locked && (spaceHeld || btnHeld) && bars[cur] > 0;
+  focus = started && !over && !locked && (spaceHeld || btnHeld) && bars[cur] > 0 && (!online || cur === me);
   for (let i = 0; i < 2; i++){
     if (i === cur && focus) bars[i] = Math.max(0, bars[i] - 30*dtS);
     $('bar'+i).style.width = bars[i] + '%';
   }
   calm += ((focus ? 1 : 0) - calm) * 0.1;
   const vm = 1 - 0.45*calm;
-  const p = over ? null : updateAim();
+  const p = (over || (online && cur !== me)) ? null : updateAim();
   // Scène nette
   drawBoard(sx);
   stuck.forEach(d => drawDart(sx, d.x, d.y));
@@ -223,10 +234,17 @@ function nextPlayer(){
 }
 
 let locked = false;
+let online = false, me = 0, peer = null, conn = null;
 function throwDart(){
   if (!started || over || locked || darts <= 0) return;
+  if (online && cur !== me) return;            // en ligne : seulement à son tour
   const wasFocus = focus;
   const hit = {x: lastAim.x, y: lastAim.y};   // pile là où le viseur est affiché
+  if (online && conn) conn.send({t:'throw', x:hit.x, y:hit.y, f:wasFocus, bar:bars[me]});
+  applyThrow(hit, wasFocus);
+}
+function applyThrow(hit, wasFocus){
+  if (!started || over || locked || darts <= 0) return;
   stuck.push(hit);
   const s = score(hit.x, hit.y);
   darts--; scores[cur] -= s.pts;
@@ -252,14 +270,55 @@ cv.addEventListener('click', e => { if (touchMode) return; mouse = pos(e); throw
 addEventListener('keydown', e => { if (e.code === 'Space'){ e.preventDefault(); spaceHeld = true; } });
 addEventListener('keyup', e => { if (e.code === 'Space') spaceHeld = false; });
 addEventListener('blur', () => spaceHeld = false);
-$('restart').onclick = () => { locked = false; reset(); };
-$('menu').onclick = () => { $('rules').style.display = 'flex'; started = false; };
-function startGame(n){ numPlayers = n; started = true; locked = false; $('rules').style.display = 'none'; reset(); }
+$('restart').onclick = () => { if (online && conn) conn.send({t:'restart'}); locked = false; reset(); };
+$('menu').onclick = () => { cleanupNet(); $('rules').style.display = 'flex'; started = false; };
+function startGame(n, on){ if (!on) cleanupNet(); numPlayers = n; started = true; locked = false; $('rules').style.display = 'none'; reset(); }
 addEventListener('keydown', e => {
-  if (started) return;
+  if (started || e.target.tagName === 'INPUT') return;
   if (e.code === 'Digit1' || e.code === 'Numpad1') startGame(1);
   if (e.code === 'Digit2' || e.code === 'Numpad2') startGame(2);
 });
+
+// --- Jeu en ligne (WebRTC via PeerJS : pas de serveur à nous) ---
+const net = t => $('net').textContent = t;
+function cleanupNet(){
+  online = false;
+  try { if (conn) conn.close(); } catch(e){}
+  try { if (peer) peer.destroy(); } catch(e){}
+  conn = peer = null;
+}
+function startOnline(){ startGame(2, true); online = true; say('Vous êtes le Joueur ' + (me+1) + (me === 0 ? ' : vous commencez !' : ' : le Joueur 1 commence.')); }
+function setupConn(c){
+  conn = c;
+  let opened = false;
+  const onOpen = () => { if (opened) return; opened = true; if (me === 0){ c.send({t:'start'}); startOnline(); } };
+  c.on('open', onOpen); if (c.open) onOpen();
+  c.on('data', m => {
+    if (m.t === 'start') startOnline();
+    else if (m.t === 'throw' && online && cur !== me){ bars[1-me] = m.bar; applyThrow({x:m.x, y:m.y}, m.f); }
+    else if (m.t === 'restart'){ locked = false; reset(); say('Nouvelle partie !'); }
+  });
+  c.on('close', () => { if (online){ online = false; say("L'autre joueur s'est déconnecté.", true); $('rules').style.display = 'flex'; started = false; net("L'adversaire est parti. Entrez un code pour rejouer."); } });
+}
+function goOnline(){
+  const code = $('code').value.trim();
+  if (!/^\d{4}$/.test(code)){ net('Entrez exactement 4 chiffres.'); return; }
+  cleanupNet();
+  if (typeof Peer === 'undefined'){ net('Service en ligne indisponible (pas de connexion ?).'); return; }
+  const id = 'fleche-bourrees-' + code;
+  net('Connexion…');
+  peer = new Peer(id);
+  peer.on('open', () => { me = 0; net('Salle ' + code + ' créée. En attente du 2e joueur… (il doit entrer le même code)'); });
+  peer.on('connection', c => { if (conn){ c.close(); return; } setupConn(c); });
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id'){                      // la salle existe : on la rejoint
+      try { peer.destroy(); } catch(e){}
+      peer = new Peer();
+      peer.on('open', () => { me = 1; net('Salle trouvée, connexion…'); setupConn(peer.connect(id, {reliable:true})); });
+      peer.on('error', e => net(e.type === 'peer-unavailable' ? "Salle introuvable (l'autre joueur est parti ?)" : 'Erreur : ' + e.type));
+    } else net('Erreur de connexion : ' + err.type);
+  });
+}
 
 // --- Commandes tactiles ---
 let btnHeld = false;
