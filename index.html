@@ -40,7 +40,7 @@
     <li>Vous êtes <b>bourré</b> : le viseur tangue, part en embardées, la vision est double. <b>La fléchette part toujours pile au centre du viseur</b> : cliquez au bon moment !</li>
     <li>Secteurs : simple, <b>double</b> (anneau extérieur), <b>triple</b> (anneau intérieur), bull 25 et bull 50.</li>
     <li><b>Sur téléphone</b> : faites glisser le doigt sur le rond jaune (en bas à droite) pour déplacer le viseur, <b>relâchez pour tirer</b>. Le bouton 🧘 (en bas à gauche) sert à vous concentrer.</li>
-    <li><b>Concentration</b> 🧘 : <b>maintenez Espace</b> (ou le bouton 🧘) pour réduire un peu les mouvements du viseur et de la vision (ça reste difficile !). La barre verte se vide pendant l'effort et <b>ne se recharge pas</b> : gardez-la pour les bons moments. Bull vert (25) : +50 % de barre, bull rouge (50) : barre pleine.</li>
+    <li><b>Concentration</b> 🧘 : <b>maintenez Espace</b> (ou le bouton 🧘) pour réduire un peu les mouvements du viseur et de la vision (ça reste difficile !). La barre verte se vide pendant l'effort et <b>ne se recharge pas</b> : gardez-la pour les bons moments. C'est à vous de la gérer pendant toute la partie.</li>
   </ul>
   <div class="btns"><button onclick="startGame(1)">1 joueur (touche 1)</button><button onclick="startGame(2)">2 joueurs (touche 2)</button></div>
 </div></div>
@@ -203,8 +203,6 @@ function throwDart(){
   const s = score(hit.x, hit.y);
   darts--; scores[cur] -= s.pts;
   let bonus = '';
-  if (s.pts === 25){ bars[cur] = Math.min(100, bars[cur] + 50); bonus = '  +50% concentration'; }
-  if (s.pts === 50){ bars[cur] = 100; bonus = '  concentration pleine !'; }
   say('Joueur ' + (cur+1) + ' : ' + s.label + (wasFocus ? ' (concentré)' : '') + bonus);
   if (scores[cur] === 0){ over = true; say('🏆 Joueur ' + (cur+1) + ' gagne en ' + round + ' tour' + (round>1?'s':'') + ' !'); hud(); return; }
   if (scores[cur] < 0){
